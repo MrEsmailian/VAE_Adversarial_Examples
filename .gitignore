@@ -2,3 +2,5 @@
 /Data/celeba
 /Models/V50
 /Models/V50
+*.png
+*.html
