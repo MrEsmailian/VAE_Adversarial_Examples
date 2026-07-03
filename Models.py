@@ -49,7 +49,11 @@ class BaseModel(nn.Module, ABC):
         torch.save(self.state_dict(), path)
 
     def load_model(self, path):
-        self.load_state_dict(torch.load(path, map_location=self.device))
+        if Path(path).exists():
+            self.load_state_dict(torch.load(path, map_location=self.device))
+            return True
+        else:
+            return False
 
 
     def summarize(self):
@@ -68,7 +72,7 @@ class BaseModel(nn.Module, ABC):
     
 
 class Encoder(BaseModel):
-    def __init__(self, architecture="small", learning_rate=1e-3, device="cpu", seed=42):
+    def __init__(self, architecture="MNIST", learning_rate=1e-3, device="cpu", seed=42):
         super().__init__(learning_rate, device, seed)
         # --------------------------------------------------
         # Architectures
@@ -152,7 +156,7 @@ class Encoder(BaseModel):
     
 
 class Decoder(BaseModel):
-    def __init__(self, architecture="small", learning_rate=1e-3, device="cpu", seed=42):
+    def __init__(self, architecture="MNIST", learning_rate=1e-3, device="cpu", seed=42):
         super().__init__(learning_rate, device, seed)
         # --------------------------------------------------
         # Architectures
@@ -261,14 +265,10 @@ class VariationalAE(BaseModel):
         )
         self.to(device)
 
-    # -----------------------------------------------------
-
     def reparameterize(self, mu, logvar):
         std = torch.exp(0.5 * logvar)
         eps = torch.randn_like(std)
         return mu + eps * std
-
-    # -----------------------------------------------------
 
     def forward(self, x):
         mu, logvar = self.encoder(x)
@@ -276,17 +276,12 @@ class VariationalAE(BaseModel):
         reconstruction = self.decoder(z)
         return reconstruction, mu, logvar
 
-    # -----------------------------------------------------
-
     def loss_function(self, reconstruction, x, mu, logvar):
         reconstruction_loss = self.criterion(reconstruction, x,)
         kl = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
         return reconstruction_loss + kl
 
-    # -----------------------------------------------------
-
     def train_one_epoch(self, train_loader, val_loader):
-        # ----- Training -----
         self.train()
         train_loss = 0.0
         for x, _ in train_loader:
@@ -299,7 +294,6 @@ class VariationalAE(BaseModel):
             train_loss += loss.item()
         train_loss /= len(train_loader)
 
-        # ----- Validation -----
         self.eval()
         val_loss = 0.0
         with torch.no_grad():
@@ -324,3 +318,111 @@ class VariationalAE(BaseModel):
             return True
         else:
             return False
+     
+        
+class Classifier(BaseModel):
+    def __init__(self, criterion, learning_rate=1e-3, architecture="MNIST", pretrained_encoder=None, device="cpu", seed=42):
+        super().__init__(learning_rate, device, seed)
+
+        self.criterion = criterion
+        self.architecture = architecture
+        self.encoder = Encoder(architecture=architecture, learning_rate=learning_rate, device=device, seed=seed)
+        self.pretrained_encoder = not (pretrained_encoder is None)
+        if self.pretrained_encoder:
+            main_path = pretrained_encoder + f'\\{self.architecture}'
+            if Path(main_path + '_Encoder').exists():
+                self.encoder.load_model(main_path + '_Encoder')
+                self.encoder.freeze()
+                print("Pre-trained model is loaded")
+        classifiers = {
+            "MNIST": nn.Sequential(
+                        nn.Linear(50, 64),
+                        nn.ReLU(inplace=True),
+                        nn.Linear(64, 32),
+                        nn.ReLU(inplace=True),
+                        nn.Dropout(0.5),
+                        nn.Linear(32, 10),
+                    ),
+            "SVHN":  nn.Sequential(
+                        nn.Linear(1024, 256),
+                        nn.ReLU(inplace=True),
+                        nn.Linear(256, 32),
+                        nn.ReLU(inplace=True),
+                        nn.Dropout(0.5),
+                        nn.Linear(32, 10),
+                    ),
+        }
+
+        self.classifier = classifiers[architecture] 
+
+        self.optimizer = optim.Adam(
+            self.parameters(),
+            lr=self.learning_rate,
+        )
+
+        self.to(device)
+
+    def forward(self, x):
+        mu, _ = self.encoder(x)
+        logits = self.classifier(mu)
+        return logits
+
+    def train_one_epoch(self, train_loader, val_loader):
+        self.train()
+        train_loss = 0.0
+        train_total = 0
+
+        for x, y in train_loader:
+            x = x.to(self.device)
+            y = y.to(self.device)
+
+            self.optimizer.zero_grad()
+
+            logits = self(x)
+            loss = self.criterion(logits, y)
+
+            loss.backward()
+            self.optimizer.step()
+
+            train_loss += loss.item()
+            train_total += y.size(0)
+
+        train_loss /= len(train_loader)
+
+        self.eval()
+        val_loss = 0.0
+        val_total = 0
+
+        with torch.no_grad():
+            for x, y in val_loader:
+                x = x.to(self.device)
+                y = y.to(self.device)
+
+                logits = self(x)
+                loss = self.criterion(logits, y)
+
+                val_loss += loss.item()
+                val_total += y.size(0)
+
+        val_loss /= len(val_loader)
+
+        return train_loss, val_loss
+    
+    def evaluate_accuracy(self, dataloader):
+        self.eval()
+
+        correct = 0
+        total = 0
+
+        with torch.no_grad():
+            for x, y in dataloader:
+                x = x.to(self.device)
+                y = y.to(self.device)
+
+                logits = self(x)
+                predictions = logits.argmax(dim=1)
+
+                correct += (predictions == y).sum().item()
+                total += y.size(0)
+
+        return correct / total
