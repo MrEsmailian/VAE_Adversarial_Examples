@@ -4,8 +4,7 @@ from torch.utils.data import DataLoader, random_split, Dataset, ConcatDataset
 class MNIST_DATA:
     def __init__(self):
         self.transform = transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Normalize((0.5,), (0.5,))
+            transforms.ToTensor()
         ])
 
         self.train_dataset = datasets.MNIST(root="./Data", train=True, download=True, transform=self.transform)
@@ -20,12 +19,11 @@ class MNIST_DATA:
     def get_class_names(self):
         return {i: name for i, name in enumerate(self.class_names)}
     
+    
 class SVHN_DATA:
     def __init__(self):
         self.transform = transforms.Compose([
             transforms.ToTensor(),
-            transforms.Normalize((0.5, 0.5, 0.5),
-                                 (0.5, 0.5, 0.5)),
             transforms.Resize((64,64))
         ])
 
@@ -41,13 +39,12 @@ class SVHN_DATA:
     def get_class_names(self):
         return {i: name for i, name in enumerate(self.class_names)}
     
+
 class CELEBA_DATA:
     def __init__(self):
         self.transform = transforms.Compose([
             transforms.Resize((64, 64)),
-            transforms.ToTensor(),
-            transforms.Normalize((0.5, 0.5, 0.5),
-                                 (0.5, 0.5, 0.5))
+            transforms.ToTensor()
         ])
 
         train_full_dataset = datasets.CelebA(root="./Data", split="train", target_type="attr", download=True, transform=self.transform)

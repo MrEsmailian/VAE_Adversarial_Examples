@@ -81,8 +81,6 @@ class Encoder(BaseModel):
             nn.Flatten(),
             nn.Linear(28 * 28, 512),
             nn.ReLU(inplace=True),
-            nn.Linear(512, 256),
-            nn.ReLU(inplace=True),
         )
 
         model_svhn_celeb = nn.Sequential(
@@ -108,8 +106,8 @@ class Encoder(BaseModel):
         models = {
             "MNIST": {
                 "feature_extractor": model_mnist,
-                "mu": nn.Linear(256, 50),
-                "logvar": nn.Linear(256, 50),
+                "mu": nn.Linear(512, 50),
+                "logvar": nn.Linear(512, 50),
             },
             "SVHN": {
                 "feature_extractor": model_svhn_celeb,
@@ -162,9 +160,7 @@ class Decoder(BaseModel):
         # Architectures
         # --------------------------------------------------
         model_mnist = nn.Sequential(
-            nn.Linear(50, 256),
-            nn.ReLU(inplace=True),
-            nn.Linear(256, 512),
+            nn.Linear(50, 512),
             nn.ReLU(inplace=True),
             nn.Linear(512, 28 * 28),
             nn.Sigmoid(),
@@ -188,7 +184,7 @@ class Decoder(BaseModel):
             nn.BatchNorm2d(32),
             nn.ReLU(True),
             nn.Conv2d(32, 3, kernel_size=5, padding=2),
-            nn.Tanh()
+            nn.Sigmoid()
         )
 
         model_celeb = nn.Sequential(
@@ -208,7 +204,7 @@ class Decoder(BaseModel):
             nn.BatchNorm2d(32),
             nn.ReLU(True),
             nn.Conv2d(32, 3, kernel_size=5, padding=2),
-            nn.Tanh()
+            nn.Sigmoid()
         )
         models = {
             "MNIST": model_mnist,
