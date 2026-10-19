@@ -57,20 +57,28 @@ class PGDTargetedAttack:
 
 
 class LatentAttack:
-    def __init__(self, encoder, lr=0.1, iterations=1000, lambda_weight=1.0, device='cpu'):
+    def __init__(self, encoder, lr=0.1, iterations=1000, lambda_weight=1.0, device='cpu', adain_block_level=0):
         self.encoder = encoder.eval()
         self.lr = lr
         self.iterations = iterations
         self.lambda_weight = lambda_weight
         self.device = device
+        if adain_block_level != 0:
+            self.adain_module = AdaIN(encoder=self.encoder, block_level=adain_block_level)
+        else:
+            self.adain_module = None
 
     def generate(self, x_orig, x_target):
         x_orig = x_orig.to(self.device)
         x_target = x_target.to(self.device)
         for param in self.encoder.parameters():
             param.requires_grad = False
+        
         with torch.no_grad():
-            z_target = self.encoder(x_target)
+            if self.adain_module == None:
+                z_target = self.encoder(x_target)
+            else:
+                z_target = self.adain_module(x_orig, x_target)
             if isinstance(z_target, tuple):
                 z_target = z_target[0] 
                 
@@ -100,20 +108,31 @@ class LatentAttack:
     
 
 class LVAEAttack:
-    def __init__(self, encoder, decoder, lr=0.1, iterations=1000, lambda_weight=1.0):
+    def __init__(self, encoder, decoder, lr=0.1, iterations=1000, lambda_weight=1.0, device='cpu', adain_block_level=0):
         self.encoder = encoder
         self.decoder = decoder
         self.lr = lr
         self.iterations = iterations
         self.lambda_weight = lambda_weight
+        self.device = device
+        if adain_block_level != 0:
+            self.adain_module = AdaIN(encoder=self.encoder, block_level=adain_block_level)
+        else:
+            self.adain_module = None
 
     def generate(self, x_orig, x_target):
+        x_orig = x_orig.to(self.device)
+        x_target = x_target.to(self.device)
         for param in self.encoder.parameters():
             param.requires_grad = False
         for param in self.decoder.parameters():
             param.requires_grad = False
+        
         with torch.no_grad():
-            z_t = self.encoder(x_target)
+            if self.adain_module == None:
+                z_t = self.encoder(x_target)
+            else:
+                z_t = self.adain_module(x_orig, x_target)
             if isinstance(z_t, tuple):
                 z_t = z_t[0] 
             x_hat_target = self.decoder(z_t)
@@ -121,6 +140,7 @@ class LVAEAttack:
         
         optimizer = optim.Adam([delta], lr=self.lr)
 
+        loss_recons, loss_dists = [], []
         for i in range(self.iterations):
             optimizer.zero_grad()
             
@@ -133,7 +153,43 @@ class LVAEAttack:
             loss_recon = F.mse_loss(x_hat_adv, x_hat_target, reduction='sum')
             loss_dist = torch.norm(delta, p=2)
             loss = (self.lambda_weight * loss_dist) + loss_recon
+            loss_recons.append(loss_recon.mean().item())
+            loss_dists.append(loss_dist.mean().item())
             loss.backward()
             optimizer.step()
 
-        return torch.clamp(x_orig + delta, 0, 1).detach()
+        return torch.clamp(x_orig + delta, 0, 1).detach(), loss_recons, loss_dists
+
+
+class AdaIN:
+    def __init__(self, encoder, block_level=1, eps=1e-5):
+        self.encoder = encoder
+        self.block_level = block_level
+        self.eps = eps
+
+    def _calc_mean_std(self, feat):
+        b, c, h, w = feat.size()
+        feat_view = feat.view(b, c, -1)
+        feat_mean = feat_view.mean(dim=2).view(b, c, 1, 1)
+        feat_std = (feat_view.var(dim=2) + self.eps).sqrt().view(b, c, 1, 1)
+        return feat_mean, feat_std
+
+    def __call__(self, x_orig, x_target):
+        if self.block_level in [1, 2, 3]:
+            split_idx = self.block_level * 3
+        else:
+            raise ValueError("block_level must be 1, 2, or 3")
+            
+        layers_before = self.encoder.feature_extractor[:split_idx]
+        layers_after = self.encoder.feature_extractor[split_idx:]
+        
+        feat_orig = layers_before(x_orig)
+        feat_target = layers_before(x_target)
+        
+        mean_orig, std_orig = self._calc_mean_std(feat_orig)
+        mean_target, std_target = self._calc_mean_std(feat_target)
+        feat_mixed = std_orig * (feat_target - mean_target) / (std_target + self.eps) + mean_orig
+        h_mixed = layers_after(feat_mixed)
+        z_target_mixed = self.encoder.mu(h_mixed) 
+        
+        return z_target_mixed
