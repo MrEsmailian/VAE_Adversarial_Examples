@@ -1,13 +1,10 @@
 /Data/SVHN
-/Data/celeba
-/Models/V50
-/Models/V50
+/Data/MNIST
 *.png
 *.html
 *.jpg
 /Models
 /__pycache__
-/SVHN
-/MNIST
-/Models
-/Models
+*.pyc
+/Data/MNIST_M
+/Data/SynthDigits
