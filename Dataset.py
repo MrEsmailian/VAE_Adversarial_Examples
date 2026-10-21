@@ -8,6 +8,7 @@ import torch
 class MNIST_M_DATA:
     def __init__(self, val_ratio=0.125, random_seed=42):
         self.transform = transforms.Compose([
+            transforms.Resize((32, 32)),
             transforms.ToTensor()
         ])
 
