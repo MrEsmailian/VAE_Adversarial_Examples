@@ -1,6 +1,7 @@
 import torch
 import lpips
 import math
+import numpy as np
 import torch.nn.functional as F
 import matplotlib.pyplot as plt
 from torchmetrics.functional.image import structural_similarity_index_measure as ssim
@@ -191,9 +192,6 @@ class Evaluator:
                     image1 = image1.repeat(1, 3, 1, 1)
                     image2 = image2.repeat(1, 3, 1, 1)
 
-                image1 = F.interpolate(image1, size=(64, 64), mode='bilinear', align_corners=False)
-                image2 = F.interpolate(image2, size=(64, 64), mode='bilinear', align_corners=False)
-
                 scores = metric(image1, image2).flatten()
                 distances.append(scores.cpu())
 
@@ -253,11 +251,13 @@ class Visualizer:
         axes = axes.ravel()
         for ax in axes:
             ax.axis("off")
+
         for i, (img, label) in enumerate(zip(images, labels)):
             if img.shape[0] == 1:
                 axes[i].imshow(img.squeeze(), cmap="gray")
             else:
                 axes[i].imshow(img.permute(1, 2, 0))
+
             if label.ndim == 0:
                 label = label.item()
                 title = class_names[label] if class_names is not None else str(label)
@@ -314,7 +314,7 @@ class Visualizer:
         plt.show()
 
     @staticmethod
-    def plot_curves(curve_data, title, x_axis, y_axis):
+    def plot_curves(curve_data, title, x_axis, y_axis, save=True):
         _, length = list(curve_data.items())[0]
         length = range(1, len(length) + 1)
 
@@ -329,10 +329,12 @@ class Visualizer:
         plt.grid(True, linestyle="--", alpha=0.6)
         plt.legend()
         plt.tight_layout()
+        if save:
+            plt.savefig(f'.\\Output\\{title}.svg', format="svg", bbox_inches="tight")
         plt.show()
 
     @staticmethod
-    def visualize_attack_reconstruction(images, adv_images_dict, vae, title="", num_images=16):
+    def visualize_attack_reconstruction(images, adv_images_dict, vae, title, num_images=16, save=True):
         device = next(vae.parameters()).device
         vae.eval()
 
@@ -369,10 +371,7 @@ class Visualizer:
         )
 
         # Column titles
-        column_titles = (
-            ["Original"] + attack_names +
-            ["Original"] + attack_names
-        )
+        column_titles = (["Original"] + attack_names + ["Original"] + attack_names)
 
         for j, name in enumerate(column_titles):
             axes[0, j].set_title(name, fontsize=8)
@@ -387,28 +386,62 @@ class Visualizer:
 
             for j, img in enumerate(imgs):
                 if img.shape[0] == 1:
-                    axes[i, j].imshow(
-                        img.squeeze(0), cmap="gray", vmin=0, vmax=1
-                    )
+                    axes[i, j].imshow(img.squeeze(0), cmap="gray", vmin=0, vmax=1)
                 else:
-                    axes[i, j].imshow(
-                        img.permute(1, 2, 0).clamp(0, 1)
-                    )
+                    axes[i, j].imshow(img.permute(1, 2, 0).clamp(0, 1))
 
                 axes[i, j].axis("off")
 
-        # Group titles
         group_width = num_attacks + 1
 
-        fig.text(0.25, 0.965, "Input Images",
-                ha="center", fontsize=11, fontweight="bold")
-
-        fig.text(0.75, 0.965, "Reconstructions",
-                ha="center", fontsize=11, fontweight="bold")
-
+        fig.text(0.25, 0.965, "Input Images", ha="center", fontsize=11, fontweight="bold")
+        fig.text(0.75, 0.965, "Reconstructions", ha="center", fontsize=11, fontweight="bold")
         fig.suptitle(title, fontsize=13, y=1.01)
 
-        plt.tight_layout(rect=[0, 0, 1, 0.94],
-                        pad=0.2, w_pad=0.1, h_pad=0.1)
+        plt.tight_layout(rect=[0, 0, 1, 0.94], pad=0.2, w_pad=0.1, h_pad=0.1)
+        if save:
+            fig.savefig(f'.\\Output\\{title}.svg', format="svg", bbox_inches="tight")
+        plt.show()
 
+    @staticmethod
+    def show_image(image, title, save=True):
+        if isinstance(image, torch.Tensor):
+            image = image.detach().cpu()
+            if image.ndim == 3:
+                image = image.permute(1, 2, 0)
+            image = image.numpy()
+
+        plt.figure(figsize=(3, 3))
+        plt.imshow(image.squeeze())
+        plt.title(title)
+        plt.axis('off')
+        if save:
+            plt.savefig(f'.\\Output\\{title}.svg', format="svg", bbox_inches="tight")
+        plt.show()
+
+    @staticmethod
+    def show_images(images: dict, title, save=True):
+        n = len(images)
+        if n == 0:
+            return
+
+        fig, axes = plt.subplots(1, n, figsize=(3 * n, 3))
+        axes = np.atleast_1d(axes)
+
+        for ax, (key, image) in zip(axes, images.items()):
+            if isinstance(image, torch.Tensor):
+                image = image.detach().cpu()
+                if image.ndim == 3:
+                    image = image.permute(1, 2, 0)
+                image = image.numpy()
+
+            image = image.squeeze()
+            ax.imshow(image)
+            ax.set_title(str(key))
+            ax.axis('off')
+
+        fig.suptitle(title)
+        plt.tight_layout()
+        if save:
+            fig.savefig(f'.\\Output\\{title}.svg', format="svg", bbox_inches="tight")
         plt.show()

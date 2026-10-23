@@ -72,7 +72,7 @@ class BaseModel(nn.Module, ABC):
     
 
 class Encoder(BaseModel):
-    def __init__(self, learning_rate=1e-3, device="cpu", seed=42):
+    def __init__(self, latent_size=512, learning_rate=1e-3, device="cpu", seed=42):
         super().__init__(learning_rate, device, seed)
         # --------------------------------------------------
         # Architectures
@@ -96,8 +96,8 @@ class Encoder(BaseModel):
             nn.BatchNorm1d(2048),
             nn.ReLU(True)
         )
-        self.mu = nn.Linear(2048, 1024)
-        self.logvar = nn.Linear(2048, 1024)
+        self.mu = nn.Linear(2048, latent_size)
+        self.logvar = nn.Linear(2048, latent_size)
 
         self.optimizer = optim.Adam(
             self.parameters(),
@@ -126,13 +126,13 @@ class Encoder(BaseModel):
     
 
 class Decoder(BaseModel):
-    def __init__(self, learning_rate=1e-3, device="cpu", seed=42):
+    def __init__(self, latent_size, learning_rate=1e-3, device="cpu", seed=42):
         super().__init__(learning_rate, device, seed)
         # --------------------------------------------------
         # Architectures
         # --------------------------------------------------
         self.decoder = nn.Sequential(
-            nn.Linear(1024, 8 * 8 * 256),
+            nn.Linear(latent_size, 8 * 8 * 256),
             nn.BatchNorm1d(8 * 8 * 256),
             nn.ReLU(True),
 
@@ -174,16 +174,19 @@ class Decoder(BaseModel):
     
 
 class VariationalAE(BaseModel):
-    def __init__(self, criterion, learning_rate, device="cpu", seed=42):
+    def __init__(self, criterion, learning_rate, light=True, device="cpu", seed=42):
         super().__init__(learning_rate, device, seed)
 
+        self.latent_size = 512 if light else 1024
         self.criterion = criterion
         self.encoder = Encoder(
+            latent_size=self.latent_size,
             learning_rate=learning_rate,
             device=device,
             seed=seed,
         )
         self.decoder = Decoder(
+            latent_size=self.latent_size,
             learning_rate=learning_rate,
             device=device,
             seed=seed,
