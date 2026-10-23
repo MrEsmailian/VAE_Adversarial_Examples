@@ -72,18 +72,12 @@ class BaseModel(nn.Module, ABC):
     
 
 class Encoder(BaseModel):
-    def __init__(self, architecture="MNIST", learning_rate=1e-3, device="cpu", seed=42):
+    def __init__(self, learning_rate=1e-3, device="cpu", seed=42):
         super().__init__(learning_rate, device, seed)
         # --------------------------------------------------
         # Architectures
         # --------------------------------------------------
-        model_mnist = nn.Sequential(
-            nn.Flatten(),
-            nn.Linear(28 * 28, 512),
-            nn.ReLU(inplace=True),
-        )
-
-        model_svhn_celeb = nn.Sequential(
+        self.feature_extractor = nn.Sequential(
             nn.Conv2d(3, 64, kernel_size=5, stride=2, padding=2),
             nn.BatchNorm2d(64),
             nn.ReLU(True),
@@ -102,30 +96,8 @@ class Encoder(BaseModel):
             nn.BatchNorm1d(2048),
             nn.ReLU(True)
         )
-
-        models = {
-            "MNIST": {
-                "feature_extractor": model_mnist,
-                "mu": nn.Linear(512, 50),
-                "logvar": nn.Linear(512, 50),
-            },
-            "SVHN": {
-                "feature_extractor": model_svhn_celeb,
-                "mu": nn.Linear(2048, 1024),
-                "logvar": nn.Linear(2048, 1024),
-            },
-            "CELEB": {
-                "feature_extractor": model_svhn_celeb,
-                "mu": nn.Linear(2048, 2048),
-                "logvar": nn.Linear(2048, 2048),
-            },
-        }
-
-        selected = models[architecture]
-
-        self.feature_extractor = selected["feature_extractor"]
-        self.mu = selected["mu"]
-        self.logvar = selected["logvar"]
+        self.mu = nn.Linear(2048, 1024)
+        self.logvar = nn.Linear(2048, 1024)
 
         self.optimizer = optim.Adam(
             self.parameters(),
@@ -154,20 +126,12 @@ class Encoder(BaseModel):
     
 
 class Decoder(BaseModel):
-    def __init__(self, architecture="MNIST", learning_rate=1e-3, device="cpu", seed=42):
+    def __init__(self, learning_rate=1e-3, device="cpu", seed=42):
         super().__init__(learning_rate, device, seed)
         # --------------------------------------------------
         # Architectures
         # --------------------------------------------------
-        model_mnist = nn.Sequential(
-            nn.Linear(50, 512),
-            nn.ReLU(inplace=True),
-            nn.Linear(512, 28 * 28),
-            nn.Sigmoid(),
-            nn.Unflatten(1, (1, 28, 28))
-        )
-
-        model_svhn = nn.Sequential(
+        self.decoder = nn.Sequential(
             nn.Linear(1024, 8 * 8 * 256),
             nn.BatchNorm1d(8 * 8 * 256),
             nn.ReLU(True),
@@ -186,33 +150,6 @@ class Decoder(BaseModel):
             nn.Conv2d(32, 3, kernel_size=5, padding=2),
             nn.Sigmoid()
         )
-
-        model_celeb = nn.Sequential(
-            nn.Linear(2048, 8 * 8 * 256),
-            nn.BatchNorm1d(8 * 8 * 256),
-            nn.ReLU(True),
-
-            nn.Unflatten(1, (256, 8, 8)),
-
-            nn.ConvTranspose2d(256, 256, kernel_size=5, stride=2, padding=2, output_padding=1),
-            nn.BatchNorm2d(256),
-            nn.ReLU(True),
-            nn.ConvTranspose2d(256, 128, kernel_size=5, stride=2, padding=2, output_padding=1),
-            nn.BatchNorm2d(128),
-            nn.ReLU(True),
-            nn.ConvTranspose2d(128, 32, kernel_size=5, stride=2, padding=2, output_padding=1),
-            nn.BatchNorm2d(32),
-            nn.ReLU(True),
-            nn.Conv2d(32, 3, kernel_size=5, padding=2),
-            nn.Sigmoid()
-        )
-        models = {
-            "MNIST": model_mnist,
-            "SVHN": model_svhn,
-            "CELEB": model_celeb,
-        }
-
-        self.decoder = models[architecture]
         self.optimizer = optim.Adam(
             self.parameters(),
             lr=self.learning_rate,
@@ -237,20 +174,16 @@ class Decoder(BaseModel):
     
 
 class VariationalAE(BaseModel):
-    def __init__(self, criterion, learning_rate, architecture="MNIST", device="cpu", seed=42):
+    def __init__(self, criterion, learning_rate, device="cpu", seed=42):
         super().__init__(learning_rate, device, seed)
 
         self.criterion = criterion
-        self.architecture = architecture
-
         self.encoder = Encoder(
-            architecture=self.architecture,
             learning_rate=learning_rate,
             device=device,
             seed=seed,
         )
         self.decoder = Decoder(
-            architecture=self.architecture,
             learning_rate=learning_rate,
             device=device,
             seed=seed,
@@ -315,14 +248,13 @@ class VariationalAE(BaseModel):
         else:
             return False
      
-        
+ 
 class Classifier(BaseModel):
-    def __init__(self, criterion, learning_rate=1e-3, architecture="MNIST", pretrained_encoder=None, device="cpu", seed=42):
+    def __init__(self, criterion, learning_rate=1e-3, pretrained_encoder=None, device="cpu", seed=42):
         super().__init__(learning_rate, device, seed)
 
         self.criterion = criterion
-        self.architecture = architecture
-        self.encoder = Encoder(architecture=architecture, learning_rate=learning_rate, device=device, seed=seed)
+        self.encoder = Encoder(learning_rate=learning_rate, device=device, seed=seed)
         self.pretrained_encoder = not (pretrained_encoder is None)
         if self.pretrained_encoder:
             main_path = pretrained_encoder + f'\\{self.architecture}'
@@ -330,27 +262,15 @@ class Classifier(BaseModel):
                 self.encoder.load_model(main_path + '_Encoder')
                 self.encoder.freeze()
                 print("Pre-trained model is loaded")
-        classifiers = {
-            "MNIST": nn.Sequential(
-                        nn.Linear(50, 64),
-                        nn.ReLU(inplace=True),
-                        nn.Linear(64, 32),
-                        nn.ReLU(inplace=True),
-                        nn.Dropout(0.5),
-                        nn.Linear(32, 10),
-                    ),
-            "SVHN":  nn.Sequential(
-                        nn.Linear(1024, 256),
-                        nn.ReLU(inplace=True),
-                        nn.Linear(256, 32),
-                        nn.ReLU(inplace=True),
-                        nn.Dropout(0.5),
-                        nn.Linear(32, 10),
-                    ),
-        }
-
-        self.classifier = classifiers[architecture] 
-
+        
+        self.classifier = nn.Sequential(
+            nn.Linear(1024, 256),
+            nn.ReLU(inplace=True),
+            nn.Linear(256, 32),
+            nn.ReLU(inplace=True),
+            nn.Dropout(0.5),
+            nn.Linear(32, 10),
+        )
         self.optimizer = optim.Adam(
             self.parameters(),
             lr=self.learning_rate,
